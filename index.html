@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
 <meta name="theme-color" content="#0F172A" />
-<title>LapPace — Multi-User Task Counter</title>
+<title>Task Counter — Multi-User Task Counter</title>
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700;800&display=swap" rel="stylesheet" />
@@ -49,11 +49,9 @@
 <script>
 const { useState, useEffect, useRef, useCallback, createElement: h } = React;
 
-// ------------ Supabase Client Setup (Fixed Variable Name) ------------
+// ------------ Supabase Setup ------------
 const SUPABASE_URL = "https://ccpsiopbzoacmrzmeptw.supabase.co"; 
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNjcHNpb3Biem9hY21yem1lcHR3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODg1Njk4ODMsImV4cCI6MjEwNDE0NTg4M30.3xlALNJnieiouUh-D_TuA8hHxd8V4agBOTre2jACneE";
-
-// Variable conflict fixed using window.supabase
 const supabaseClient = window.supabase ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 
 // ------------ Helpers ------------
@@ -89,7 +87,7 @@ function AuthScreen({ onAuthSuccess }) {
     setLoading(true);
 
     if (!supabaseClient) {
-      setError("Supabase URL and Key are not properly configured!");
+      setError("Supabase configuration missing!");
       setLoading(false);
       return;
     }
@@ -102,17 +100,17 @@ function AuthScreen({ onAuthSuccess }) {
       const { data, error } = await supabaseClient.auth.signUp({ email, password });
       if (error) setError(error.message);
       else {
-        alert("Registration successful! You can now log in.");
+        alert("Registration successful!");
         setIsLogin(true);
       }
     }
     setLoading(false);
   };
 
-  return h('div', { className: 'min-h-screen flex items-center justify-center px-4 bg-paper dark:bg-slate9' },
+  return h('div', { className: 'min-h-screen flex flex-col items-center justify-center px-4 bg-paper dark:bg-slate9' },
     h('div', { className: 'w-full max-w-sm p-6 rounded-2xl bg-papercard dark:bg-slate8 border border-paperborder dark:border-slate7 shadow-xl' },
-      h('h2', { className: 'text-2xl font-bold text-center mb-2 text-paperink dark:text-paper' }, isLogin ? 'Welcome Back' : 'Create Account'),
-      h('p', { className: 'text-xs text-center text-slate5 mb-6' }, 'Sign in to sync your task history across devices'),
+      h('h2', { className: 'text-2xl font-bold text-center mb-1 text-paperink dark:text-paper' }, 'Task Counter'),
+      h('p', { className: 'text-xs text-center text-slate5 mb-6' }, isLogin ? 'Sign in to sync your task history' : 'Create an account to get started'),
       error && h('div', { className: 'mb-4 p-3 bg-crimson1/10 border border-crimson1 text-crimson1 text-xs rounded-xl text-center' }, error),
       h('form', { onSubmit: handleSubmit, className: 'space-y-4' },
         h('input', {
@@ -127,7 +125,7 @@ function AuthScreen({ onAuthSuccess }) {
         }),
         h('button', {
           type: 'submit', disabled: loading,
-          className: 'w-full py-3 rounded-xl bg-cyan1 text-slate9 font-bold transition-all active:scale-95 disabled:opacity-50'
+          className: 'w-full py-3 rounded-xl bg-orange-500 text-slate9 font-bold transition-all active:scale-95 disabled:opacity-50'
         }, loading ? 'Please wait...' : (isLogin ? 'Log In' : 'Sign Up'))
       ),
       h('div', { className: 'mt-6 text-center text-xs text-slate5' },
@@ -136,6 +134,10 @@ function AuthScreen({ onAuthSuccess }) {
           onClick: () => setIsLogin(!isLogin),
           className: 'text-cyan1 font-semibold underline underline-offset-2'
         }, isLogin ? 'Sign Up' : 'Log In')
+      ),
+      h('div', { className: 'mt-6 pt-4 border-t border-paperborder dark:border-slate7 text-center' },
+        h('span', { className: 'text-[11px] font-medium text-slate5' }, 'Developed by '),
+        h('span', { className: 'text-[11px] font-bold text-cyan1' }, 'Mohammad Jawad')
       )
     )
   );
@@ -166,7 +168,7 @@ function ControlBar({ isRunning, hasStarted, onStartPause, onReset }) {
     h('button', {
       onClick: onStartPause,
       className: "flex-1 h-12 rounded-full font-bold text-sm transition-all active:scale-[0.98] flex items-center justify-center gap-2 " +
-        (isRunning ? "bg-papercard dark:bg-slate8 text-paperink dark:text-paper border border-paperborder dark:border-slate7" : "bg-cyan1 text-slate9")
+        (isRunning ? "bg-papercard dark:bg-slate8 text-paperink dark:text-paper border border-paperborder dark:border-slate7" : "bg-orange-500 text-slate9")
     }, isRunning ? '⏸ Pause' : hasStarted ? '▶ Resume' : '▶ Start'),
     h('button', {
       onClick: onReset,
@@ -195,7 +197,7 @@ function TaskItem({ task }) {
   );
 }
 
-function MainApp({ user, onLogout }) {
+function MainApp({ user, onLogout, isDarkMode, toggleDarkMode }) {
   const [isRunning, setIsRunning] = useState(false);
   const [hasStarted, setHasStarted] = useState(false);
   const [elapsedMs, setElapsedMs] = useState(0);
@@ -209,10 +211,18 @@ function MainApp({ user, onLogout }) {
   const totalPausedDurationRef = useRef(0);
   const rafRef = useRef(null);
 
+  // ডাটাবেজ থেকে ডাটা লোড করার সময় মোট সময় হিসেব করার ফিক্সড লজিক
   const fetchTasks = async () => {
     if (!supabaseClient) return;
     const { data, error } = await supabaseClient.from('tasks').select('*').order('created_at', { ascending: false });
-    if (!error && data) setTasks(data);
+    if (!error && data) {
+      setTasks(data);
+      // মোট জমা থাকা সময় যোগ করে টাইমার স্টেটে বসানো
+      const totalMsFromDatabase = data.reduce((acc, t) => acc + (t.duration_ms || 0), 0);
+      setElapsedMs(totalMsFromDatabase);
+      accumulatedRef.current = totalMsFromDatabase;
+      if (data.length > 0) setHasStarted(true);
+    }
   };
 
   useEffect(() => { fetchTasks(); }, []);
@@ -274,13 +284,17 @@ function MainApp({ user, onLogout }) {
   return h('div', { className: 'h-screen w-full bg-paper dark:bg-slate9 flex items-stretch justify-center' },
     h('div', { className: 'relative w-full max-w-[420px] h-full flex flex-col bg-paper dark:bg-slate9 border-x border-paperborder dark:border-slate7' },
       
-      h('div', { className: 'flex items-center justify-between px-6 pt-4 pb-1 border-b border-paperborder dark:border-slate7' },
+      h('div', { className: 'flex items-center justify-between px-6 pt-4 pb-3 border-b border-paperborder dark:border-slate7' },
         h('div', { className: 'flex items-center gap-2' },
           h('div', { className: 'w-2 h-2 rounded-full bg-cyan1 animate-pulse' }),
-          h('span', { className: 'font-bold text-xs tracking-tight' }, 'LapPace')
+          h('span', { className: 'font-bold text-sm tracking-tight' }, 'Task Counter')
         ),
         h('div', { className: 'flex items-center gap-3' },
-          h('span', { className: 'text-[11px] text-slate5 truncate max-w-[120px]' }, user.email),
+          h('button', {
+            onClick: toggleDarkMode,
+            title: 'Toggle Dark/Light Mode',
+            className: 'p-1.5 rounded-lg border border-paperborder dark:border-slate7 bg-papercard dark:bg-slate8 text-xs hover:bg-slate7/20 transition-all'
+          }, isDarkMode ? '☀️ Light' : '🌙 Dark'),
           h('button', { onClick: onLogout, className: 'text-xs text-crimson1 font-semibold' }, 'Logout')
         )
       ),
@@ -319,6 +333,19 @@ function MainApp({ user, onLogout }) {
 function App() {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [isDarkMode, setIsDarkMode] = useState(true);
+
+  const toggleDarkMode = () => {
+    setIsDarkMode(prev => {
+      const next = !prev;
+      if (next) {
+        document.documentElement.classList.add('dark');
+      } else {
+        document.documentElement.classList.remove('dark');
+      }
+      return next;
+    });
+  };
 
   useEffect(() => {
     if (!supabaseClient) {
@@ -344,7 +371,7 @@ function App() {
   }
 
   return user 
-    ? h(MainApp, { user, onLogout: () => supabaseClient.auth.signOut() }) 
+    ? h(MainApp, { user, onLogout: () => supabaseClient.auth.signOut(), isDarkMode, toggleDarkMode }) 
     : h(AuthScreen, { onAuthSuccess: setUser });
 }
 
