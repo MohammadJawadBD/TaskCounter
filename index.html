@@ -4,11 +4,13 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
 <meta name="theme-color" content="#0F172A" />
-<title>LapPace — Task Counter (Local Storage)</title>
+<title>LapPace — Multi-User Task Counter</title>
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700;800&display=swap" rel="stylesheet" />
 <script src="https://cdn.tailwindcss.com"></script>
+<!-- Supabase JS v2 CDN -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
   tailwind.config = {
     darkMode: 'class',
@@ -47,6 +49,13 @@
 <script>
 const { useState, useEffect, useRef, useCallback, createElement: h } = React;
 
+// ------------ Supabase Client Setup (Fixed Variable Name) ------------
+const SUPABASE_URL = "https://ccpsiopbzoacmrzmeptw.supabase.co"; 
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNjcHNpb3Biem9hY21yem1lcHR3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODg1Njk4ODMsImV4cCI6MjEwNDE0NTg4M30.3xlALNJnieiouUh-D_TuA8hHxd8V4agBOTre2jACneE";
+
+// Variable conflict fixed using window.supabase
+const supabaseClient = window.supabase ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
+
 // ------------ Helpers ------------
 const formatHMS = (ms) => {
   const t = Math.max(0, Math.floor(ms));
@@ -66,7 +75,73 @@ const formatDuration = (ms) => {
 
 const formatClock = (dateStr) => new Date(dateStr).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true });
 
-// ------------ UI Components ------------
+// ------------ Auth Screen Component ------------
+function AuthScreen({ onAuthSuccess }) {
+  const [isLogin, setIsLogin] = useState(true);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setError('');
+    setLoading(true);
+
+    if (!supabaseClient) {
+      setError("Supabase URL and Key are not properly configured!");
+      setLoading(false);
+      return;
+    }
+
+    if (isLogin) {
+      const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
+      if (error) setError(error.message);
+      else onAuthSuccess(data.user);
+    } else {
+      const { data, error } = await supabaseClient.auth.signUp({ email, password });
+      if (error) setError(error.message);
+      else {
+        alert("Registration successful! You can now log in.");
+        setIsLogin(true);
+      }
+    }
+    setLoading(false);
+  };
+
+  return h('div', { className: 'min-h-screen flex items-center justify-center px-4 bg-paper dark:bg-slate9' },
+    h('div', { className: 'w-full max-w-sm p-6 rounded-2xl bg-papercard dark:bg-slate8 border border-paperborder dark:border-slate7 shadow-xl' },
+      h('h2', { className: 'text-2xl font-bold text-center mb-2 text-paperink dark:text-paper' }, isLogin ? 'Welcome Back' : 'Create Account'),
+      h('p', { className: 'text-xs text-center text-slate5 mb-6' }, 'Sign in to sync your task history across devices'),
+      error && h('div', { className: 'mb-4 p-3 bg-crimson1/10 border border-crimson1 text-crimson1 text-xs rounded-xl text-center' }, error),
+      h('form', { onSubmit: handleSubmit, className: 'space-y-4' },
+        h('input', {
+          type: 'email', required: true, placeholder: 'Email Address', value: email,
+          onChange: (e) => setEmail(e.target.value),
+          className: 'w-full px-4 py-3 rounded-xl border border-paperborder dark:border-slate7 bg-paper dark:bg-slate9 text-paperink dark:text-paper text-sm outline-none focus:border-cyan1'
+        }),
+        h('input', {
+          type: 'password', required: true, placeholder: 'Password', value: password,
+          onChange: (e) => setPassword(e.target.value),
+          className: 'w-full px-4 py-3 rounded-xl border border-paperborder dark:border-slate7 bg-paper dark:bg-slate9 text-paperink dark:text-paper text-sm outline-none focus:border-cyan1'
+        }),
+        h('button', {
+          type: 'submit', disabled: loading,
+          className: 'w-full py-3 rounded-xl bg-cyan1 text-slate9 font-bold transition-all active:scale-95 disabled:opacity-50'
+        }, loading ? 'Please wait...' : (isLogin ? 'Log In' : 'Sign Up'))
+      ),
+      h('div', { className: 'mt-6 text-center text-xs text-slate5' },
+        isLogin ? "Don't have an account? " : "Already have an account? ",
+        h('button', {
+          onClick: () => setIsLogin(!isLogin),
+          className: 'text-cyan1 font-semibold underline underline-offset-2'
+        }, isLogin ? 'Sign Up' : 'Log In')
+      )
+    )
+  );
+}
+
+// ------------ Dashboard Components ------------
 function MetricBlock({ elapsedMs, taskCount, avgMs }) {
   return h('div', { className: 'px-6 pt-6 pb-4' },
     h('div', { className: 'text-center' },
@@ -95,7 +170,7 @@ function ControlBar({ isRunning, hasStarted, onStartPause, onReset }) {
     }, isRunning ? '⏸ Pause' : hasStarted ? '▶ Resume' : '▶ Start'),
     h('button', {
       onClick: onReset,
-      disabled: !hasStarted && !isRunning,
+      disabled: !hasStarted,
       className: "w-12 h-12 shrink-0 rounded-full border border-paperborder dark:border-slate7 bg-papercard dark:bg-slate8 text-paperink dark:text-paper flex items-center justify-center transition-all active:scale-95 disabled:opacity-30"
     }, h('span', { className: 'text-lg' }, '↺'))
   );
@@ -120,8 +195,7 @@ function TaskItem({ task }) {
   );
 }
 
-// ------------ Main Application (Using LocalStorage) ------------
-function MainApp() {
+function MainApp({ user, onLogout }) {
   const [isRunning, setIsRunning] = useState(false);
   const [hasStarted, setHasStarted] = useState(false);
   const [elapsedMs, setElapsedMs] = useState(0);
@@ -135,34 +209,24 @@ function MainApp() {
   const totalPausedDurationRef = useRef(0);
   const rafRef = useRef(null);
 
-  // ১. অ্যাপ ওপেন হলেই লোকাল স্টোরেজ থেকে ডাটা লোড হবে
-  useEffect(() => {
-    const savedTasks = localStorage.getItem('lappace_tasks');
-    const savedElapsed = localStorage.getItem('lappace_elapsed');
-    if (savedTasks) {
-      try { setTasks(JSON.parse(savedTasks)); } catch (e) {}
-    }
-    if (savedElapsed) {
-      const ms = parseInt(savedElapsed, 10) || 0;
-      setElapsedMs(ms);
-      accumulatedRef.current = ms;
-    }
-  }, []);
+  const fetchTasks = async () => {
+    if (!supabaseClient) return;
+    const { data, error } = await supabaseClient.from('tasks').select('*').order('created_at', { ascending: false });
+    if (!error && data) setTasks(data);
+  };
 
-  // ২. টাইমার অ্যানিমেশন
+  useEffect(() => { fetchTasks(); }, []);
+
   useEffect(() => {
     if (!isRunning) return;
     const tick = () => {
-      const currentElapsed = accumulatedRef.current + (Date.now() - startRef.current);
-      setElapsedMs(currentElapsed);
-      localStorage.setItem('lappace_elapsed', currentElapsed.toString());
+      setElapsedMs(accumulatedRef.current + (Date.now() - startRef.current));
       rafRef.current = requestAnimationFrame(tick);
     };
     rafRef.current = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(rafRef.current);
   }, [isRunning]);
 
-  // Start / Pause হ্যান্ডলার
   const handleStartPause = useCallback(() => {
     const now = Date.now();
     if (!isRunning) {
@@ -177,9 +241,8 @@ function MainApp() {
     }
   }, [isRunning, hasStarted]);
 
-  // টাস্ক যোগ করা এবং লোকাল স্টোরেজে সেভ করা
-  const handleAddTask = () => {
-    if (!isRunning) return;
+  const handleAddTask = async () => {
+    if (!isRunning || !supabaseClient) return;
     const now = Date.now();
     const durationMs = Math.max(0, now - lastTaskTimeRef.current - totalPausedDurationRef.current);
     
@@ -187,30 +250,22 @@ function MainApp() {
     totalPausedDurationRef.current = 0;
 
     const newTask = {
-      id: Date.now(),
+      user_id: user.id,
       number: tasks.length + 1,
-      duration_ms: durationMs,
-      created_at: new Date().toISOString()
+      duration_ms: durationMs
     };
 
-    const updatedTasks = [newTask, ...tasks];
-    setTasks(updatedTasks);
-    // লোকাল স্টোরেজে সেভ
-    localStorage.setItem('lappace_tasks', JSON.stringify(updatedTasks));
+    const { error } = await supabaseClient.from('tasks').insert([newTask]);
+    if (!error) fetchTasks();
   };
 
-  // হিস্ট্রি রিক্লিয়ার বা রিসেট করা
-  const handleResetConfirm = () => {
-    setIsRunning(false); 
-    setHasStarted(false); 
-    setElapsedMs(0);
-    accumulatedRef.current = 0; 
-    startRef.current = 0; 
-    lastTaskTimeRef.current = 0;
+  const handleResetConfirm = async () => {
+    if (!supabaseClient) return;
+    setIsRunning(false); setHasStarted(false); setElapsedMs(0);
+    accumulatedRef.current = 0; startRef.current = 0; lastTaskTimeRef.current = 0;
     
+    await supabaseClient.from('tasks').delete().eq('user_id', user.id);
     setTasks([]);
-    localStorage.removeItem('lappace_tasks');
-    localStorage.removeItem('lappace_elapsed');
     setShowReset(false);
   };
 
@@ -219,12 +274,15 @@ function MainApp() {
   return h('div', { className: 'h-screen w-full bg-paper dark:bg-slate9 flex items-stretch justify-center' },
     h('div', { className: 'relative w-full max-w-[420px] h-full flex flex-col bg-paper dark:bg-slate9 border-x border-paperborder dark:border-slate7' },
       
-      h('div', { className: 'flex items-center justify-between px-6 pt-4 pb-3 border-b border-paperborder dark:border-slate7' },
+      h('div', { className: 'flex items-center justify-between px-6 pt-4 pb-1 border-b border-paperborder dark:border-slate7' },
         h('div', { className: 'flex items-center gap-2' },
-          h('div', { className: 'w-2.5 h-2.5 rounded-full bg-cyan1 animate-pulse' }),
-          h('span', { className: 'font-bold text-sm tracking-tight' }, 'LapPace')
+          h('div', { className: 'w-2 h-2 rounded-full bg-cyan1 animate-pulse' }),
+          h('span', { className: 'font-bold text-xs tracking-tight' }, 'LapPace')
         ),
-        h('span', { className: 'text-[10px] bg-papercard dark:bg-slate8 px-2 py-1 rounded-md text-slate5 font-medium border border-paperborder dark:border-slate7' }, 'Local Storage Mode')
+        h('div', { className: 'flex items-center gap-3' },
+          h('span', { className: 'text-[11px] text-slate5 truncate max-w-[120px]' }, user.email),
+          h('button', { onClick: onLogout, className: 'text-xs text-crimson1 font-semibold' }, 'Logout')
+        )
       ),
 
       h(MetricBlock, { elapsedMs, taskCount: tasks.length, avgMs }),
@@ -233,12 +291,12 @@ function MainApp() {
       
       h('div', { className: 'border-t border-paperborder dark:border-slate7 flex-1 min-h-0 flex flex-col' },
         h('div', { className: 'px-5 pt-3 pb-1 flex items-center justify-between' },
-          h('span', { className: 'text-[10px] font-semibold uppercase tracking-[0.15em] text-slate5' }, 'Task Log'),
+          h('span', { className: 'text-[10px] font-semibold uppercase tracking-[0.15em] text-slate5' }, 'Cloud Sync Log'),
           h('span', { className: 'text-[10px] font-medium text-slate5' }, `${tasks.length} entries`)
         ),
         h('div', { className: 'flex-1 min-h-0 overflow-y-auto no-scrollbar' },
           tasks.length === 0 
-            ? h('div', { className: 'h-full flex items-center justify-center text-xs text-slate5' }, 'No tasks logged yet.')
+            ? h('div', { className: 'h-full flex items-center justify-center text-xs text-slate5' }, 'No tasks in database.')
             : tasks.map(t => h(TaskItem, { key: t.id, task: t }))
         )
       )
@@ -246,18 +304,51 @@ function MainApp() {
 
     showReset && h('div', { className: 'fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm px-6', onClick: () => setShowReset(false) },
       h('div', { className: 'w-full max-w-sm rounded-2xl bg-paper dark:bg-slate8 border border-paperborder dark:border-slate7 p-5' },
-        h('h2', { className: 'text-base font-bold' }, 'Clear local history?'),
-        h('p', { className: 'mt-1 text-xs text-slate5' }, 'This will delete all stored tasks on this device.'),
+        h('h2', { className: 'text-base font-bold' }, 'Reset cloud history?'),
+        h('p', { className: 'mt-1 text-xs text-slate5' }, 'This will permanently delete all logged tasks from your account.'),
         h('div', { className: 'mt-5 flex justify-end gap-2' },
           h('button', { onClick: () => setShowReset(false), className: 'px-3 py-1.5 rounded-lg text-xs text-slate5' }, 'Cancel'),
-          h('button', { onClick: handleResetConfirm, className: 'px-3 py-1.5 rounded-lg text-xs bg-crimson1 text-white font-semibold' }, 'Clear All')
+          h('button', { onClick: handleResetConfirm, className: 'px-3 py-1.5 rounded-lg text-xs bg-crimson1 text-white font-semibold' }, 'Delete All')
         )
       )
     )
   );
 }
 
-ReactDOM.createRoot(document.getElementById('root')).render(h(MainApp));
+// ------------ Root App ------------
+function App() {
+  const [user, setUser] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!supabaseClient) {
+      setLoading(false);
+      return;
+    }
+
+    supabaseClient.auth.getSession().then(({ data: { session } }) => {
+      setUser(session?.user ?? null);
+      setLoading(false);
+    });
+
+    const { data: { subscription } } = supabaseClient.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null);
+      setLoading(false);
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  if (loading) {
+    return h('div', { className: 'h-screen flex items-center justify-center text-xs text-slate5' }, 'Connecting Cloud...');
+  }
+
+  return user 
+    ? h(MainApp, { user, onLogout: () => supabaseClient.auth.signOut() }) 
+    : h(AuthScreen, { onAuthSuccess: setUser });
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(h(App));
 </script>
 </body>
 </html>
