@@ -211,13 +211,17 @@ function MainApp({ user, onLogout, isDarkMode, toggleDarkMode }) {
   const totalPausedDurationRef = useRef(0);
   const rafRef = useRef(null);
 
-  // ডাটাবেজ থেকে ডাটা লোড করার সময় মোট সময় হিসেব করার ফিক্সড লজিক
+  // ১. নির্দিষ্ট ইউজারের ডাটাবেজ থেকে ডাটা লোড করার ফিক্সড লজিক
   const fetchTasks = async () => {
-    if (!supabaseClient) return;
-    const { data, error } = await supabaseClient.from('tasks').select('*').order('created_at', { ascending: false });
+    if (!supabaseClient || !user) return;
+    const { data, error } = await supabaseClient
+      .from('tasks')
+      .select('*')
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: false });
+
     if (!error && data) {
       setTasks(data);
-      // মোট জমা থাকা সময় যোগ করে টাইমার স্টেটে বসানো
       const totalMsFromDatabase = data.reduce((acc, t) => acc + (t.duration_ms || 0), 0);
       setElapsedMs(totalMsFromDatabase);
       accumulatedRef.current = totalMsFromDatabase;
@@ -237,24 +241,27 @@ function MainApp({ user, onLogout, isDarkMode, toggleDarkMode }) {
     return () => cancelAnimationFrame(rafRef.current);
   }, [isRunning]);
 
+  // ২. পজ/রিজ্যুম করার সময় ব্যাকগ্রাউন্ডের টাইম গ্যাপ রিমুভ করার লজিক
   const handleStartPause = useCallback(() => {
     const now = Date.now();
     if (!isRunning) {
       startRef.current = now;
-      if (!hasStarted) { setHasStarted(true); lastTaskTimeRef.current = now; }
-      else { totalPausedDurationRef.current += (now - pauseTimeRef.current); }
+      lastTaskTimeRef.current = now; // রিজ্যুম করার সাথে সাথেই নতুন টাইমস্ট্যাম্প সেট হবে
+      totalPausedDurationRef.current = 0;
+      setHasStarted(true);
       setIsRunning(true);
     } else {
       accumulatedRef.current += now - startRef.current;
       pauseTimeRef.current = now;
       setIsRunning(false);
     }
-  }, [isRunning, hasStarted]);
+  }, [isRunning]);
 
+  // ৩. নিখুঁত টাস্ক ডিউরেশন কাউন্ট ও স্টেট আপডেট লজিক
   const handleAddTask = async () => {
     if (!isRunning || !supabaseClient) return;
     const now = Date.now();
-    const durationMs = Math.max(0, now - lastTaskTimeRef.current - totalPausedDurationRef.current);
+    const durationMs = Math.max(0, now - lastTaskTimeRef.current);
     
     lastTaskTimeRef.current = now;
     totalPausedDurationRef.current = 0;
@@ -265,8 +272,10 @@ function MainApp({ user, onLogout, isDarkMode, toggleDarkMode }) {
       duration_ms: durationMs
     };
 
-    const { error } = await supabaseClient.from('tasks').insert([newTask]);
-    if (!error) fetchTasks();
+    const { data, error } = await supabaseClient.from('tasks').insert([newTask]).select();
+    if (!error && data) {
+      setTasks(prev => [data[0], ...prev]);
+    }
   };
 
   const handleResetConfirm = async () => {
