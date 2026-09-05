@@ -1,0 +1,354 @@
+<!doctype html>
+<html lang="en" class="dark">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<meta name="theme-color" content="#0F172A" />
+<title>LapPace — Multi-User Task Counter</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700;800&display=swap" rel="stylesheet" />
+<script src="https://cdn.tailwindcss.com"></script>
+<!-- Supabase JS v2 CDN -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+  tailwind.config = {
+    darkMode: 'class',
+    theme: {
+      extend: {
+        colors: {
+          slate9: '#0F172A', slate8: '#1E293B', slate7: '#334155', slate5: '#64748B',
+          cyan1: '#38BDF8', emerald1: '#22C55E', crimson1: '#EF4444',
+          paper: '#F8FAFC', papercard: '#E2E8F0', paperborder: '#CBD5E1', paperink: '#0F172A',
+        },
+        fontFamily: {
+          mono: ['JetBrains Mono', 'ui-monospace', 'monospace'],
+          body: ['Inter', 'system-ui', 'sans-serif'],
+        },
+      },
+    },
+  };
+</script>
+<style>
+  html, body { height: 100%; margin: 0; padding: 0; }
+  body { font-family: 'Inter', system-ui, sans-serif; -webkit-tap-highlight-color: transparent; overscroll-behavior: none; }
+  .font-mono-display { font-family: 'JetBrains Mono', monospace; font-variant-numeric: tabular-nums; letter-spacing: -0.02em; }
+  .no-scrollbar::-webkit-scrollbar { display: none; }
+  .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+  @keyframes slideDown { from { opacity: 0; transform: translateY(-14px); max-height: 0; } to { opacity: 1; transform: translateY(0); max-height: 80px; } }
+  .row-enter { animation: slideDown 0.28s cubic-bezier(0.22,1,0.36,1); }
+</style>
+</head>
+<body class="bg-paper dark:bg-slate9 text-paperink dark:text-paper font-body transition-colors duration-200">
+<div id="root"></div>
+
+<!-- React 18 CDNs -->
+<script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+
+<script>
+const { useState, useEffect, useRef, useCallback, createElement: h } = React;
+
+// ------------ Supabase Client Setup (Fixed Variable Name) ------------
+const SUPABASE_URL = "https://ccpsiopbzoacmrzmeptw.supabase.co/rest/v1"; 
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNjcHNpb3Biem9hY21yem1lcHR3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODg1Njk4ODMsImV4cCI6MjEwNDE0NTg4M30.3xlALNJnieiouUh-D_TuA8hHxd8V4agBOTre2jACneE";
+
+// Variable conflict fixed using window.supabase
+const supabaseClient = window.supabase ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
+
+// ------------ Helpers ------------
+const formatHMS = (ms) => {
+  const t = Math.max(0, Math.floor(ms));
+  const s = Math.floor(t / 1000);
+  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
+  const p = (n) => String(n).padStart(2, '0');
+  return `${p(h)}:${p(m)}:${p(sec)}`;
+};
+
+const formatDuration = (ms) => {
+  const t = Math.max(0, Math.floor(ms));
+  const s = Math.floor(t / 1000);
+  const m = Math.floor(s / 60), sec = s % 60, cs = Math.floor((t % 1000) / 10);
+  const p = (n) => String(n).padStart(2, '0');
+  return `${p(m)}:${p(sec)}.${p(cs)}`;
+};
+
+const formatClock = (dateStr) => new Date(dateStr).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true });
+
+// ------------ Auth Screen Component ------------
+function AuthScreen({ onAuthSuccess }) {
+  const [isLogin, setIsLogin] = useState(true);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setError('');
+    setLoading(true);
+
+    if (!supabaseClient) {
+      setError("Supabase URL and Key are not properly configured!");
+      setLoading(false);
+      return;
+    }
+
+    if (isLogin) {
+      const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
+      if (error) setError(error.message);
+      else onAuthSuccess(data.user);
+    } else {
+      const { data, error } = await supabaseClient.auth.signUp({ email, password });
+      if (error) setError(error.message);
+      else {
+        alert("Registration successful! You can now log in.");
+        setIsLogin(true);
+      }
+    }
+    setLoading(false);
+  };
+
+  return h('div', { className: 'min-h-screen flex items-center justify-center px-4 bg-paper dark:bg-slate9' },
+    h('div', { className: 'w-full max-w-sm p-6 rounded-2xl bg-papercard dark:bg-slate8 border border-paperborder dark:border-slate7 shadow-xl' },
+      h('h2', { className: 'text-2xl font-bold text-center mb-2 text-paperink dark:text-paper' }, isLogin ? 'Welcome Back' : 'Create Account'),
+      h('p', { className: 'text-xs text-center text-slate5 mb-6' }, 'Sign in to sync your task history across devices'),
+      error && h('div', { className: 'mb-4 p-3 bg-crimson1/10 border border-crimson1 text-crimson1 text-xs rounded-xl text-center' }, error),
+      h('form', { onSubmit: handleSubmit, className: 'space-y-4' },
+        h('input', {
+          type: 'email', required: true, placeholder: 'Email Address', value: email,
+          onChange: (e) => setEmail(e.target.value),
+          className: 'w-full px-4 py-3 rounded-xl border border-paperborder dark:border-slate7 bg-paper dark:bg-slate9 text-paperink dark:text-paper text-sm outline-none focus:border-cyan1'
+        }),
+        h('input', {
+          type: 'password', required: true, placeholder: 'Password', value: password,
+          onChange: (e) => setPassword(e.target.value),
+          className: 'w-full px-4 py-3 rounded-xl border border-paperborder dark:border-slate7 bg-paper dark:bg-slate9 text-paperink dark:text-paper text-sm outline-none focus:border-cyan1'
+        }),
+        h('button', {
+          type: 'submit', disabled: loading,
+          className: 'w-full py-3 rounded-xl bg-cyan1 text-slate9 font-bold transition-all active:scale-95 disabled:opacity-50'
+        }, loading ? 'Please wait...' : (isLogin ? 'Log In' : 'Sign Up'))
+      ),
+      h('div', { className: 'mt-6 text-center text-xs text-slate5' },
+        isLogin ? "Don't have an account? " : "Already have an account? ",
+        h('button', {
+          onClick: () => setIsLogin(!isLogin),
+          className: 'text-cyan1 font-semibold underline underline-offset-2'
+        }, isLogin ? 'Sign Up' : 'Log In')
+      )
+    )
+  );
+}
+
+// ------------ Dashboard Components ------------
+function MetricBlock({ elapsedMs, taskCount, avgMs }) {
+  return h('div', { className: 'px-6 pt-6 pb-4' },
+    h('div', { className: 'text-center' },
+      h('div', { className: 'text-[11px] font-semibold uppercase tracking-[0.15em] text-slate5 mb-1' }, 'Total Elapsed'),
+      h('div', { className: 'font-mono-display font-extrabold leading-none text-cyan1', style: { fontSize: 'clamp(2.5rem, 10vw, 3.2rem)' } }, formatHMS(elapsedMs))
+    ),
+    h('div', { className: 'mt-5 grid grid-cols-2 gap-3' },
+      h('div', { className: 'rounded-2xl border border-paperborder dark:border-slate7 bg-papercard dark:bg-slate8 px-4 py-3' },
+        h('div', { className: 'text-[10px] font-semibold uppercase tracking-[0.15em] text-slate5' }, 'Total Tasks'),
+        h('div', { className: 'mt-1 font-mono-display font-bold text-paperink dark:text-paper', style: { fontSize: '1.3rem' } }, String(taskCount).padStart(2, '0'))
+      ),
+      h('div', { className: 'rounded-2xl border border-paperborder dark:border-slate7 bg-papercard dark:bg-slate8 px-4 py-3' },
+        h('div', { className: 'text-[10px] font-semibold uppercase tracking-[0.15em] text-slate5' }, 'Avg / Task'),
+        h('div', { className: 'mt-1 font-mono-display font-bold text-paperink dark:text-paper', style: { fontSize: '1.3rem' } }, taskCount > 0 ? formatDuration(avgMs) : '—')
+      )
+    )
+  );
+}
+
+function ControlBar({ isRunning, hasStarted, onStartPause, onReset }) {
+  return h('div', { className: 'px-6 pb-2 flex items-center gap-3' },
+    h('button', {
+      onClick: onStartPause,
+      className: "flex-1 h-12 rounded-full font-bold text-sm transition-all active:scale-[0.98] flex items-center justify-center gap-2 " +
+        (isRunning ? "bg-papercard dark:bg-slate8 text-paperink dark:text-paper border border-paperborder dark:border-slate7" : "bg-cyan1 text-slate9")
+    }, isRunning ? '⏸ Pause' : hasStarted ? '▶ Resume' : '▶ Start'),
+    h('button', {
+      onClick: onReset,
+      disabled: !hasStarted,
+      className: "w-12 h-12 shrink-0 rounded-full border border-paperborder dark:border-slate7 bg-papercard dark:bg-slate8 text-paperink dark:text-paper flex items-center justify-center transition-all active:scale-95 disabled:opacity-30"
+    }, h('span', { className: 'text-lg' }, '↺'))
+  );
+}
+
+function AddTaskButton({ enabled, onAdd }) {
+  return h('button', {
+    onClick: onAdd,
+    disabled: !enabled,
+    className: "w-full h-12 rounded-xl font-bold text-sm transition-all flex items-center justify-center gap-2 active:scale-[0.98] " +
+      (enabled ? "bg-emerald1 text-slate9 shadow-lg shadow-emerald1/20" : "bg-papercard dark:bg-slate8 text-slate5 opacity-60 cursor-not-allowed")
+  }, h('span', { className: 'text-lg' }, '+'), ' Add Task');
+}
+
+function TaskItem({ task }) {
+  return h('div', { className: 'px-5 row-enter' },
+    h('div', { className: 'flex items-center gap-3 py-2.5 border-b border-paperborder dark:border-slate7' },
+      h('div', { className: 'font-mono-display font-bold text-paperink dark:text-paper text-xs w-8 shrink-0' }, `#${task.number}`),
+      h('div', { className: 'flex-1 min-w-0 font-mono-display font-bold text-cyan1 text-xs' }, formatDuration(task.duration_ms)),
+      h('div', { className: 'text-[11px] text-slate5 font-medium shrink-0' }, formatClock(task.created_at))
+    )
+  );
+}
+
+function MainApp({ user, onLogout }) {
+  const [isRunning, setIsRunning] = useState(false);
+  const [hasStarted, setHasStarted] = useState(false);
+  const [elapsedMs, setElapsedMs] = useState(0);
+  const [tasks, setTasks] = useState([]);
+  const [showReset, setShowReset] = useState(false);
+
+  const startRef = useRef(0);
+  const accumulatedRef = useRef(0);
+  const lastTaskTimeRef = useRef(0);
+  const pauseTimeRef = useRef(0);
+  const totalPausedDurationRef = useRef(0);
+  const rafRef = useRef(null);
+
+  const fetchTasks = async () => {
+    if (!supabaseClient) return;
+    const { data, error } = await supabaseClient.from('tasks').select('*').order('created_at', { ascending: false });
+    if (!error && data) setTasks(data);
+  };
+
+  useEffect(() => { fetchTasks(); }, []);
+
+  useEffect(() => {
+    if (!isRunning) return;
+    const tick = () => {
+      setElapsedMs(accumulatedRef.current + (Date.now() - startRef.current));
+      rafRef.current = requestAnimationFrame(tick);
+    };
+    rafRef.current = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(rafRef.current);
+  }, [isRunning]);
+
+  const handleStartPause = useCallback(() => {
+    const now = Date.now();
+    if (!isRunning) {
+      startRef.current = now;
+      if (!hasStarted) { setHasStarted(true); lastTaskTimeRef.current = now; }
+      else { totalPausedDurationRef.current += (now - pauseTimeRef.current); }
+      setIsRunning(true);
+    } else {
+      accumulatedRef.current += now - startRef.current;
+      pauseTimeRef.current = now;
+      setIsRunning(false);
+    }
+  }, [isRunning, hasStarted]);
+
+  const handleAddTask = async () => {
+    if (!isRunning || !supabaseClient) return;
+    const now = Date.now();
+    const durationMs = Math.max(0, now - lastTaskTimeRef.current - totalPausedDurationRef.current);
+    
+    lastTaskTimeRef.current = now;
+    totalPausedDurationRef.current = 0;
+
+    const newTask = {
+      user_id: user.id,
+      number: tasks.length + 1,
+      duration_ms: durationMs
+    };
+
+    const { error } = await supabaseClient.from('tasks').insert([newTask]);
+    if (!error) fetchTasks();
+  };
+
+  const handleResetConfirm = async () => {
+    if (!supabaseClient) return;
+    setIsRunning(false); setHasStarted(false); setElapsedMs(0);
+    accumulatedRef.current = 0; startRef.current = 0; lastTaskTimeRef.current = 0;
+    
+    await supabaseClient.from('tasks').delete().eq('user_id', user.id);
+    setTasks([]);
+    setShowReset(false);
+  };
+
+  const avgMs = tasks.length > 0 ? elapsedMs / tasks.length : 0;
+
+  return h('div', { className: 'h-screen w-full bg-paper dark:bg-slate9 flex items-stretch justify-center' },
+    h('div', { className: 'relative w-full max-w-[420px] h-full flex flex-col bg-paper dark:bg-slate9 border-x border-paperborder dark:border-slate7' },
+      
+      h('div', { className: 'flex items-center justify-between px-6 pt-4 pb-1 border-b border-paperborder dark:border-slate7' },
+        h('div', { className: 'flex items-center gap-2' },
+          h('div', { className: 'w-2 h-2 rounded-full bg-cyan1 animate-pulse' }),
+          h('span', { className: 'font-bold text-xs tracking-tight' }, 'LapPace')
+        ),
+        h('div', { className: 'flex items-center gap-3' },
+          h('span', { className: 'text-[11px] text-slate5 truncate max-w-[120px]' }, user.email),
+          h('button', { onClick: onLogout, className: 'text-xs text-crimson1 font-semibold' }, 'Logout')
+        )
+      ),
+
+      h(MetricBlock, { elapsedMs, taskCount: tasks.length, avgMs }),
+      h(ControlBar, { isRunning, hasStarted, onStartPause: handleStartPause, onReset: () => setShowReset(true) }),
+      h('div', { className: 'px-6 pt-1 pb-3' }, h(AddTaskButton, { enabled: isRunning, onAdd: handleAddTask })),
+      
+      h('div', { className: 'border-t border-paperborder dark:border-slate7 flex-1 min-h-0 flex flex-col' },
+        h('div', { className: 'px-5 pt-3 pb-1 flex items-center justify-between' },
+          h('span', { className: 'text-[10px] font-semibold uppercase tracking-[0.15em] text-slate5' }, 'Cloud Sync Log'),
+          h('span', { className: 'text-[10px] font-medium text-slate5' }, `${tasks.length} entries`)
+        ),
+        h('div', { className: 'flex-1 min-h-0 overflow-y-auto no-scrollbar' },
+          tasks.length === 0 
+            ? h('div', { className: 'h-full flex items-center justify-center text-xs text-slate5' }, 'No tasks in database.')
+            : tasks.map(t => h(TaskItem, { key: t.id, task: t }))
+        )
+      )
+    ),
+
+    showReset && h('div', { className: 'fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm px-6', onClick: () => setShowReset(false) },
+      h('div', { className: 'w-full max-w-sm rounded-2xl bg-paper dark:bg-slate8 border border-paperborder dark:border-slate7 p-5' },
+        h('h2', { className: 'text-base font-bold' }, 'Reset cloud history?'),
+        h('p', { className: 'mt-1 text-xs text-slate5' }, 'This will permanently delete all logged tasks from your account.'),
+        h('div', { className: 'mt-5 flex justify-end gap-2' },
+          h('button', { onClick: () => setShowReset(false), className: 'px-3 py-1.5 rounded-lg text-xs text-slate5' }, 'Cancel'),
+          h('button', { onClick: handleResetConfirm, className: 'px-3 py-1.5 rounded-lg text-xs bg-crimson1 text-white font-semibold' }, 'Delete All')
+        )
+      )
+    )
+  );
+}
+
+// ------------ Root App ------------
+function App() {
+  const [user, setUser] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!supabaseClient) {
+      setLoading(false);
+      return;
+    }
+
+    supabaseClient.auth.getSession().then(({ data: { session } }) => {
+      setUser(session?.user ?? null);
+      setLoading(false);
+    });
+
+    const { data: { subscription } } = supabaseClient.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null);
+      setLoading(false);
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  if (loading) {
+    return h('div', { className: 'h-screen flex items-center justify-center text-xs text-slate5' }, 'Connecting Cloud...');
+  }
+
+  return user 
+    ? h(MainApp, { user, onLogout: () => supabaseClient.auth.signOut() }) 
+    : h(AuthScreen, { onAuthSuccess: setUser });
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(h(App));
+</script>
+</body>
+</html>
