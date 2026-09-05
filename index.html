@@ -53,6 +53,10 @@ const { useState, useEffect, useRef, useCallback, createElement: h } = React;
 const SUPABASE_URL = "https://ccpsiopbzoacmrzmeptw.supabase.co"; 
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNjcHNpb3Biem9hY21yem1lcHR3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODg1Njk4ODMsImV4cCI6MjEwNDE0NTg4M30.3xlALNJnieiouUh-D_TuA8hHxd8V4agBOTre2jACneE";
 const supabaseClient = window.supabase ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
+  auth: {
+    persistSession: true, // মোবাইল ব্রাউজার/অ্যাপে সেশন ধরে রাখতে
+    autoRefreshToken: true,
+  }
 
 // ------------ Helpers ------------
 const formatHMS = (ms) => {
